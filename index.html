@@ -16,6 +16,16 @@ html, body { margin: 0; height: 100%; background: #111318; overflow: hidden; }
 #stage > section { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; overflow: hidden; }
 #stage > section:not(.on) { display: none !important; }
 x-shape, x-icon { display: block; }
+#loader { position: fixed; inset: 0; z-index: 10; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; background: #1E2235; color: #FBF3E4; transition: opacity .5s; }
+#loader.done { opacity: 0; pointer-events: none; }
+#loader .lt { font-family: 'Jua', sans-serif; font-size: clamp(30px, 5vw, 64px); }
+#loader .fish { width: clamp(64px, 8vw, 110px); height: auto; animation: bob 1s ease-in-out infinite alternate; }
+@keyframes bob { from { transform: translateY(-6px) rotate(-6deg); } to { transform: translateY(6px) rotate(6deg); } }
+#loader .track { width: min(70vw, 520px); height: 14px; background: #2B3150; border-radius: 99px; overflow: hidden; }
+#loader .fill { height: 100%; width: 0; background: #E8A33D; border-radius: 99px; transition: width .2s; }
+#loader .pct { font: 600 clamp(13px, 1.6vw, 18px) 'Noto Sans KR', sans-serif; color: #D9D3C7; }
+#start { display: none; }
+#start.ready { display: flex; }
 #start { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; background: rgba(17,19,24,.55); color: #fbf3e4; font-family: 'Jua', sans-serif; cursor: pointer; border: 0; width: 100%; }
 #start span.big { font-size: clamp(28px, 5vw, 64px); }
 #start span.small { font: 400 clamp(13px, 1.6vw, 18px) 'Noto Sans KR', sans-serif; opacity: .85; }
@@ -207,6 +217,7 @@ x-shape, x-icon { display: block; }
 <div class="g-legend"><p class="lg-m">주황 날짜 · 11/25 기획 발표, 12/2 기능 마감(이후 새 기능 없음), 12/9 최종 발표</p></div>
 </section>
 </div>
+<div id="loader" role="status" aria-live="polite"><svg class="fish" viewBox="-56 -34 104 68" width="96" height="63" aria-hidden="true"><path d="M40 0 C30 -26 -10 -30 -28 -12 L-48 -26 C-46 -10 -46 10 -48 26 L-28 12 C-10 30 30 26 40 0 Z" fill="#E8A33D" stroke="#8A4517" stroke-width="4" stroke-linejoin="round"/><circle cx="24" cy="-6" r="4" fill="#2B2118"/><path d="M4 -12 q7 12 0 24 M-10 -12 q7 12 0 24" fill="none" stroke="#8A4517" stroke-width="3" stroke-linecap="round"/></svg><div class="lt">두의 붕어빵가게</div><div class="track"><div class="fill"></div></div><div class="pct">붕어빵 굽는 중… 0%</div></div>
 <button id="start" aria-label="발표 시작"><span class="big">두의 붕어빵가게</span><span class="btn">▶ 발표 시작</span><span class="small">← → 또는 스페이스로 넘기기 · F 전체 화면</span></button>
 <script>
 const slides=[...document.querySelectorAll('#stage > section')];
@@ -218,11 +229,11 @@ function show(n){
   slides.forEach((s,k)=>{ s.classList.toggle('on',k===i); s.querySelectorAll('video').forEach(v=>{ if(k===i&&started){ v.currentTime=0; v.play().catch(()=>{}); } else v.pause(); }); });
   history.replaceState(null,'','#'+(i+1));
 }
-function start(){ started=true; document.getElementById('start').remove(); show(i); }
+function start(){ if(!document.getElementById('start').classList.contains('ready')) return; started=true; document.getElementById('start').remove(); show(i); }
 document.getElementById('start').onclick=start;
 function toggleFs(){ document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen().catch(()=>{}); }
 addEventListener('keydown',e=>{
-  if(!started){ if([' ','Enter','ArrowRight'].includes(e.key)){ e.preventDefault(); start(); } return; }
+  if(!started){ if([' ','Enter','ArrowRight'].includes(e.key)){ e.preventDefault(); if(document.getElementById('start')) start(); } return; }
   if(['ArrowRight','PageDown',' ','Enter'].includes(e.key)){ e.preventDefault(); show(i+1); }
   else if(['ArrowLeft','PageUp','Backspace'].includes(e.key)){ e.preventDefault(); show(i-1); }
   else if(e.key==='Home') show(0); else if(e.key==='End') show(slides.length-1);
@@ -231,6 +242,29 @@ addEventListener('keydown',e=>{
 stage.addEventListener('click',e=>{ if(!started) return; if(e.target.tagName==='VIDEO'){ const v=e.target; v.paused?v.play():v.pause(); return; } show(i+(e.clientX<innerWidth/3?-1:1)); });
 let tx=null; addEventListener('touchstart',e=>{tx=e.touches[0].clientX;},{passive:true});
 addEventListener('touchend',e=>{ if(tx===null||!started) return; const dx=e.changedTouches[0].clientX-tx; if(Math.abs(dx)>50) show(i+(dx<0?1:-1)); tx=null; });
+// preload everything, then allow start
+(async function preload(){
+  const loader=document.getElementById('loader'), fill=loader.querySelector('.fill'), pct=loader.querySelector('.pct');
+  const imgs=[...new Set([...document.querySelectorAll('#stage img')].map(x=>x.getAttribute('src')).concat([...document.querySelectorAll('#stage video')].map(v=>v.getAttribute('poster'))).filter(Boolean))];
+  const vids=[...document.querySelectorAll('#stage video')];
+  const VW=12; let imgDone=0, vidFrac=vids.map(()=>0);
+  const total=imgs.length+VW*vids.length;
+  const upd=()=>{ const p=Math.min(100,Math.round((imgDone+vidFrac.reduce((a,b)=>a+b,0)*VW)/total*100)); fill.style.width=p+'%'; pct.textContent='붕어빵 굽는 중… '+p+'%'; };
+  const imgJobs=imgs.map(src=>new Promise(res=>{ const im=new Image(); im.onload=im.onerror=()=>{ imgDone++; upd(); res(); }; im.src=src; }));
+  const vidJobs=vids.map(async (v,k)=>{
+    const src=v.getAttribute('src');
+    try{
+      const r=await fetch(src); const len=+r.headers.get('content-length')||0; const rd=r.body.getReader(); const parts=[]; let got=0;
+      for(;;){ const {done,value}=await rd.read(); if(done) break; parts.push(value); got+=value.length; if(len){ vidFrac[k]=got/len; upd(); } }
+      v.src=URL.createObjectURL(new Blob(parts,{type:'video/mp4'}));
+    }catch(e){ v.preload='auto'; }
+    vidFrac[k]=1; upd();
+  });
+  const timeout=new Promise(res=>setTimeout(res,60000));
+  await Promise.race([Promise.all([...imgJobs,...vidJobs,document.fonts.ready]),timeout]);
+  fill.style.width='100%'; pct.textContent='준비 완료';
+  setTimeout(()=>{ loader.classList.add('done'); document.getElementById('start').classList.add('ready'); setTimeout(()=>loader.remove(),600); },300);
+})();
 addEventListener('resize',fit); fit(); show(i);
 </script>
 </body>
